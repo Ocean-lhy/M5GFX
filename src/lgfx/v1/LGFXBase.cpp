@@ -2506,7 +2506,7 @@ namespace lgfx
     else
 #endif
     {
-      this->_runtime_font.reset(new VLWfont());
+      this->_runtime_font.reset(new BFFfont());
     }
 
     if (this->_runtime_font->loadFont(data)) {
