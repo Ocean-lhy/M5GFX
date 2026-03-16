@@ -3,6 +3,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
     )
 file(GLOB SRCS
      src/*.cpp
+     src/lgfx/Fonts/lv_font_*.c
      src/lgfx/Fonts/efont/*.c
      src/lgfx/Fonts/IPA/*.c
      src/lgfx/utility/*.c

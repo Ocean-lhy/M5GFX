@@ -16,6 +16,35 @@
 #include <string.h>
 #include "../internal/algorithm.h"
 
+extern "C" {
+  extern const lv_font_t lv_font_montserrat_8;
+  extern const lv_font_t lv_font_montserrat_10;
+  extern const lv_font_t lv_font_montserrat_12;
+  extern const lv_font_t lv_font_montserrat_14;
+  extern const lv_font_t lv_font_montserrat_16;
+  extern const lv_font_t lv_font_montserrat_18;
+  extern const lv_font_t lv_font_montserrat_20;
+  extern const lv_font_t lv_font_montserrat_22;
+  extern const lv_font_t lv_font_montserrat_24;
+  extern const lv_font_t lv_font_montserrat_26;
+  extern const lv_font_t lv_font_montserrat_28;
+  extern const lv_font_t lv_font_montserrat_28_compressed;
+  extern const lv_font_t lv_font_montserrat_30;
+  extern const lv_font_t lv_font_montserrat_32;
+  extern const lv_font_t lv_font_montserrat_34;
+  extern const lv_font_t lv_font_montserrat_36;
+  extern const lv_font_t lv_font_montserrat_38;
+  extern const lv_font_t lv_font_montserrat_40;
+  extern const lv_font_t lv_font_montserrat_42;
+  extern const lv_font_t lv_font_montserrat_44;
+  extern const lv_font_t lv_font_montserrat_46;
+  extern const lv_font_t lv_font_montserrat_48;
+  extern const lv_font_t lv_font_simsun_14_cjk;
+  extern const lv_font_t lv_font_simsun_16_cjk;
+  extern const lv_font_t lv_font_unscii_8;
+  extern const lv_font_t lv_font_unscii_16;
+}
+
 #ifdef min
 #undef min
 #endif
@@ -716,6 +745,186 @@ label_nextbyte: /// 次のデータを取得する;
         } while (i || decode.get_unsigned_bits(1) != 0 );
       } while (ly < h);
     }
+    gfx->endWrite();
+    return xAdvance;
+  }
+
+//----------------------------------------------------------------------------
+
+  void LVGLfont::getDefaultMetric(FontMetrics *metrics) const
+  {
+    if (_font == nullptr)
+    {
+      metrics->width = 0;
+      metrics->x_advance = 0;
+      metrics->x_offset = 0;
+      metrics->height = 0;
+      metrics->y_advance = 0;
+      metrics->y_offset = 0;
+      metrics->baseline = 0;
+      return;
+    }
+
+    metrics->height = _font->line_height;
+    metrics->y_advance = _font->line_height;
+    metrics->baseline = _font->line_height - _font->base_line;
+    metrics->y_offset = -metrics->baseline;
+    metrics->width = (_font->line_height * 5) >> 3;
+    metrics->x_advance = metrics->width;
+    metrics->x_offset = 0;
+  }
+
+  bool LVGLfont::updateFontMetric(FontMetrics *metrics, uint16_t uniCode) const
+  {
+    if (_font == nullptr || _font->get_glyph_dsc == nullptr)
+    {
+      metrics->x_offset = 0;
+      metrics->width = metrics->x_advance = 0;
+      return false;
+    }
+
+    lv_font_glyph_dsc_t gd;
+    if (!_font->get_glyph_dsc(_font, &gd, uniCode, 0))
+    {
+      metrics->x_offset = 0;
+      metrics->width = metrics->x_advance = (metrics->height * 5) >> 3;
+      return false;
+    }
+
+    metrics->x_offset = gd.ofs_x;
+    metrics->width = gd.box_w;
+    metrics->x_advance = (gd.adv_w + 8) >> 4;
+    return true;
+  }
+
+  size_t LVGLfont::drawChar(LGFXBase* gfx, int32_t x, int32_t y, uint16_t uniCode, const TextStyle* style, FontMetrics* metrics, int32_t& filled_x) const
+  {
+    if (_font == nullptr || _font->get_glyph_dsc == nullptr || _font->get_glyph_bitmap == nullptr)
+    {
+      return drawCharDummy(gfx, x, y, metrics->x_advance, metrics->height, style, filled_x);
+    }
+
+    int32_t sy = 65536 * style->size_y;
+    int32_t sx = 65536 * style->size_x;
+    y += (metrics->y_offset * sy) >> 16;
+
+    lv_font_glyph_dsc_t gd;
+    if (!_font->get_glyph_dsc(_font, &gd, uniCode, 0))
+    {
+      return drawCharDummy(gfx, x, y, metrics->x_advance, metrics->height, style, filled_x);
+    }
+
+    const uint8_t* bitmap = _font->get_glyph_bitmap(_font, uniCode);
+    if (bitmap == nullptr)
+    {
+      return drawCharDummy(gfx, x, y, metrics->x_advance, metrics->height, style, filled_x);
+    }
+
+    int32_t adv_px = (gd.adv_w + 8) >> 4;
+    int32_t xAdvance = (adv_px * sx) >> 16;
+    int32_t xoffset = (gd.ofs_x * sx) >> 16;
+    int32_t yoffset = metrics->baseline - (gd.ofs_y + gd.box_h);
+
+    auto cc = gfx->getColorConverter();
+    uint32_t col_back = cc->convert(style->back_rgb888);
+    uint32_t col_fore = cc->convert(style->fore_rgb888);
+    bool fillbg = (style->back_rgb888 != style->fore_rgb888);
+
+    int32_t left = 0;
+    int32_t right = 0;
+    if (fillbg)
+    {
+      left  = std::max<int>(filled_x, x + (xoffset < 0 ? xoffset : 0));
+      right = x + std::max<int>(((gd.box_w * sx) >> 16) + xoffset, xAdvance);
+      filled_x = right;
+    }
+
+    int32_t draw_x = x + xoffset;
+
+    uint32_t bpp = gd.bpp ? gd.bpp : 4;
+    uint32_t alpha_max = (1U << bpp) - 1U;
+    uint32_t back_rgb = fillbg ? style->back_rgb888 : gfx->getBaseColor();
+    int32_t fore_r = (style->fore_rgb888 >> 16) & 0xFF;
+    int32_t fore_g = (style->fore_rgb888 >> 8) & 0xFF;
+    int32_t fore_b = style->fore_rgb888 & 0xFF;
+    int32_t back_r = (back_rgb >> 16) & 0xFF;
+    int32_t back_g = (back_rgb >> 8) & 0xFF;
+    int32_t back_b = back_rgb & 0xFF;
+
+    gfx->startWrite();
+
+    if (fillbg && left < right)
+    {
+      gfx->setRawColor(col_back);
+      if (yoffset > 0)
+      {
+        gfx->writeFillRect(left, y, right - left, (yoffset * sy) >> 16);
+      }
+      int32_t y0 = ((yoffset + gd.box_h) * sy) >> 16;
+      int32_t y1 = (metrics->height * sy) >> 16;
+      if (y0 < y1)
+      {
+        gfx->writeFillRect(left, y + y0, right - left, y1 - y0);
+      }
+    }
+
+    if (gd.box_w && gd.box_h)
+    {
+      for (uint32_t py = 0; py < gd.box_h; ++py)
+      {
+        int32_t y0 = ((yoffset + (int32_t)py) * sy) >> 16;
+        int32_t y1 = ((yoffset + (int32_t)py + 1) * sy) >> 16;
+        if (y1 <= y0)
+        {
+          continue;
+        }
+
+        for (uint32_t px = 0; px < gd.box_w; ++px)
+        {
+          uint32_t pix_index = py * gd.box_w + px;
+          uint32_t bit_index = pix_index * bpp;
+          uint32_t alpha = 0;
+          for (uint32_t bi = 0; bi < bpp; ++bi)
+          {
+            uint32_t pos = bit_index + bi;
+            uint32_t bit = (bitmap[pos >> 3] >> (7 - (pos & 7))) & 1U;
+            alpha = (alpha << 1) | bit;
+          }
+
+          if (!fillbg && alpha == 0)
+          {
+            continue;
+          }
+
+          int32_t x0 = ((int32_t)px * sx) >> 16;
+          int32_t x1 = (((int32_t)px + 1) * sx) >> 16;
+          if (x1 <= x0)
+          {
+            continue;
+          }
+
+          uint32_t raw;
+          if (alpha == 0)
+          {
+            raw = col_back;
+          }
+          else if (alpha >= alpha_max)
+          {
+            raw = col_fore;
+          }
+          else
+          {
+            int32_t r = back_r + ((fore_r - back_r) * (int32_t)alpha + (int32_t)(alpha_max >> 1)) / (int32_t)alpha_max;
+            int32_t g = back_g + ((fore_g - back_g) * (int32_t)alpha + (int32_t)(alpha_max >> 1)) / (int32_t)alpha_max;
+            int32_t b = back_b + ((fore_b - back_b) * (int32_t)alpha + (int32_t)(alpha_max >> 1)) / (int32_t)alpha_max;
+            raw = cc->convert(((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b);
+          }
+          gfx->setRawColor(raw);
+          gfx->writeFillRect(draw_x + x0, y + y0, x1 - x0, y1 - y0);
+        }
+      }
+    }
+
     gfx->endWrite();
     return xAdvance;
   }
@@ -2136,6 +2345,32 @@ label_nextbyte: /// 次のデータを取得する;
     const GLCDfont Font8x8C64 = { font8x8_c64, font8x8c64_info, 8, 8, 7 };
     const FixedBMPfont AsciiFont8x16  = { FontLib8x16 , font0_info,  8, 16, 13 };
     const FixedBMPfont AsciiFont24x48 = { FontLib24x48, fontlib24x48_info, 24, 48, 40 };
+    const LVGLfont lv_font_montserrat_8(&::lv_font_montserrat_8);
+    const LVGLfont lv_font_montserrat_10(&::lv_font_montserrat_10);
+    const LVGLfont lv_font_montserrat_12(&::lv_font_montserrat_12);
+    const LVGLfont lv_font_montserrat_14(&::lv_font_montserrat_14);
+    const LVGLfont lv_font_montserrat_16(&::lv_font_montserrat_16);
+    const LVGLfont lv_font_montserrat_18(&::lv_font_montserrat_18);
+    const LVGLfont lv_font_montserrat_20(&::lv_font_montserrat_20);
+    const LVGLfont lv_font_montserrat_22(&::lv_font_montserrat_22);
+    const LVGLfont lv_font_montserrat_24(&::lv_font_montserrat_24);
+    const LVGLfont lv_font_montserrat_26(&::lv_font_montserrat_26);
+    const LVGLfont lv_font_montserrat_28(&::lv_font_montserrat_28);
+    const LVGLfont lv_font_montserrat_28_compressed(&::lv_font_montserrat_28_compressed);
+    const LVGLfont lv_font_montserrat_30(&::lv_font_montserrat_30);
+    const LVGLfont lv_font_montserrat_32(&::lv_font_montserrat_32);
+    const LVGLfont lv_font_montserrat_34(&::lv_font_montserrat_34);
+    const LVGLfont lv_font_montserrat_36(&::lv_font_montserrat_36);
+    const LVGLfont lv_font_montserrat_38(&::lv_font_montserrat_38);
+    const LVGLfont lv_font_montserrat_40(&::lv_font_montserrat_40);
+    const LVGLfont lv_font_montserrat_42(&::lv_font_montserrat_42);
+    const LVGLfont lv_font_montserrat_44(&::lv_font_montserrat_44);
+    const LVGLfont lv_font_montserrat_46(&::lv_font_montserrat_46);
+    const LVGLfont lv_font_montserrat_48(&::lv_font_montserrat_48);
+    const LVGLfont lv_font_simsun_14_cjk(&::lv_font_simsun_14_cjk);
+    const LVGLfont lv_font_simsun_16_cjk(&::lv_font_simsun_16_cjk);
+    const LVGLfont lv_font_unscii_8(&::lv_font_unscii_8);
+    const LVGLfont lv_font_unscii_16(&::lv_font_unscii_16);
 
     const U8g2font lgfxJapanMincho_8   = { lgfx_font_japan_mincho_8    };
     const U8g2font lgfxJapanMincho_12  = { lgfx_font_japan_mincho_12   };
