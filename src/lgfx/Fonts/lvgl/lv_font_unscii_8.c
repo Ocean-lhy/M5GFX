@@ -4,11 +4,7 @@
  * Opts: --no-compress --no-prefilter --bpp 1 --size 8 --font unscii-8.ttf -r 0x20-0x7F --format lvgl -o lv_font_unscii_8.c --force-fast-kern-format
  ******************************************************************************/
 
-#ifdef LV_LVGL_H_INCLUDE_SIMPLE
-    #include "lvgl.h"
-#else
-    #include "../../lvgl.h"
-#endif
+#include "lvgl.h"
 
 #ifndef LV_FONT_UNSCII_8
     #define LV_FONT_UNSCII_8 1

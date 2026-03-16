@@ -9,41 +9,13 @@
 #include "../Fonts/efont/lgfx_efont_ja.h"
 #include "../Fonts/efont/lgfx_efont_kr.h"
 #include "../Fonts/efont/lgfx_efont_tw.h"
+#include "../Fonts/lvgl/lvgl.h"
 
 #include <stdint.h>
 #include <stddef.h>
 #include <math.h>
 #include <string.h>
 #include "../internal/algorithm.h"
-
-extern "C" {
-  extern const lv_font_t lv_font_montserrat_8;
-  extern const lv_font_t lv_font_montserrat_10;
-  extern const lv_font_t lv_font_montserrat_12;
-  extern const lv_font_t lv_font_montserrat_14;
-  extern const lv_font_t lv_font_montserrat_16;
-  extern const lv_font_t lv_font_montserrat_18;
-  extern const lv_font_t lv_font_montserrat_20;
-  extern const lv_font_t lv_font_montserrat_22;
-  extern const lv_font_t lv_font_montserrat_24;
-  extern const lv_font_t lv_font_montserrat_26;
-  extern const lv_font_t lv_font_montserrat_28;
-  extern const lv_font_t lv_font_montserrat_28_compressed;
-  extern const lv_font_t lv_font_montserrat_30;
-  extern const lv_font_t lv_font_montserrat_32;
-  extern const lv_font_t lv_font_montserrat_34;
-  extern const lv_font_t lv_font_montserrat_36;
-  extern const lv_font_t lv_font_montserrat_38;
-  extern const lv_font_t lv_font_montserrat_40;
-  extern const lv_font_t lv_font_montserrat_42;
-  extern const lv_font_t lv_font_montserrat_44;
-  extern const lv_font_t lv_font_montserrat_46;
-  extern const lv_font_t lv_font_montserrat_48;
-  extern const lv_font_t lv_font_simsun_14_cjk;
-  extern const lv_font_t lv_font_simsun_16_cjk;
-  extern const lv_font_t lv_font_unscii_8;
-  extern const lv_font_t lv_font_unscii_16;
-}
 
 #ifdef min
 #undef min
