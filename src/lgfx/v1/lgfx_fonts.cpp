@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <math.h>
 #include <string.h>
+#include <vector>
 #include "../internal/algorithm.h"
 
 #ifdef min
@@ -765,56 +766,46 @@ label_nextbyte: /// 次のデータを取得する;
 
     metrics->x_offset = gd.ofs_x;
     metrics->width = gd.box_w;
-    metrics->x_advance = (gd.adv_w + 8) >> 4;
+    metrics->x_advance = gd.adv_w;
     return true;
   }
 
-  size_t LVGLfont::drawChar(LGFXBase* gfx, int32_t x, int32_t y, uint16_t uniCode, const TextStyle* style, FontMetrics* metrics, int32_t& filled_x) const
+  static size_t draw_alpha_bitmap_common(
+      LGFXBase* gfx,
+      int32_t x,
+      int32_t y,
+      const TextStyle* style,
+      FontMetrics* metrics,
+      int32_t& filled_x,
+      int32_t xAdvance,
+      int32_t xoffset,
+      int32_t yoffset,
+      uint32_t box_w,
+      uint32_t box_h,
+      const uint8_t* bitmap,
+      uint32_t glyph_stride,
+      uint32_t alpha_max)
   {
-    if (_font == nullptr || _font->get_glyph_dsc == nullptr || _font->get_glyph_bitmap == nullptr)
-    {
-      return drawCharDummy(gfx, x, y, metrics->x_advance, metrics->height, style, filled_x);
-    }
-
     int32_t sy = 65536 * style->size_y;
     int32_t sx = 65536 * style->size_x;
-    y += (metrics->y_offset * sy) >> 16;
-
-    lv_font_glyph_dsc_t gd;
-    if (!_font->get_glyph_dsc(_font, &gd, uniCode, 0))
-    {
-      return drawCharDummy(gfx, x, y, metrics->x_advance, metrics->height, style, filled_x);
-    }
-
-    const uint8_t* bitmap = _font->get_glyph_bitmap(_font, uniCode);
-    if (bitmap == nullptr)
-    {
-      return drawCharDummy(gfx, x, y, metrics->x_advance, metrics->height, style, filled_x);
-    }
-
-    int32_t adv_px = (gd.adv_w + 8) >> 4;
-    int32_t xAdvance = (adv_px * sx) >> 16;
-    int32_t xoffset = (gd.ofs_x * sx) >> 16;
-    int32_t yoffset = metrics->baseline - (gd.ofs_y + gd.box_h);
 
     auto cc = gfx->getColorConverter();
     uint32_t col_back = cc->convert(style->back_rgb888);
     uint32_t col_fore = cc->convert(style->fore_rgb888);
     bool fillbg = (style->back_rgb888 != style->fore_rgb888);
+    int32_t glyph_w_scaled = (box_w * sx) >> 16;
 
     int32_t left = 0;
     int32_t right = 0;
     if (fillbg)
     {
       left  = std::max<int>(filled_x, x + (xoffset < 0 ? xoffset : 0));
-      right = x + std::max<int>(((gd.box_w * sx) >> 16) + xoffset, xAdvance);
+      right = x + std::max<int>(glyph_w_scaled + xoffset, xAdvance);
       filled_x = right;
     }
 
     int32_t draw_x = x + xoffset;
 
-    uint32_t bpp = gd.bpp ? gd.bpp : 4;
-    uint32_t alpha_max = (1U << bpp) - 1U;
     uint32_t back_rgb = fillbg ? style->back_rgb888 : gfx->getBaseColor();
     int32_t fore_r = (style->fore_rgb888 >> 16) & 0xFF;
     int32_t fore_g = (style->fore_rgb888 >> 8) & 0xFF;
@@ -832,7 +823,7 @@ label_nextbyte: /// 次のデータを取得する;
       {
         gfx->writeFillRect(left, y, right - left, (yoffset * sy) >> 16);
       }
-      int32_t y0 = ((yoffset + gd.box_h) * sy) >> 16;
+      int32_t y0 = ((yoffset + (int32_t)box_h) * sy) >> 16;
       int32_t y1 = (metrics->height * sy) >> 16;
       if (y0 < y1)
       {
@@ -840,9 +831,9 @@ label_nextbyte: /// 次のデータを取得する;
       }
     }
 
-    if (gd.box_w && gd.box_h)
+    if (bitmap != nullptr && box_w && box_h)
     {
-      for (uint32_t py = 0; py < gd.box_h; ++py)
+      for (uint32_t py = 0; py < box_h; ++py)
       {
         int32_t y0 = ((yoffset + (int32_t)py) * sy) >> 16;
         int32_t y1 = ((yoffset + (int32_t)py + 1) * sy) >> 16;
@@ -851,17 +842,23 @@ label_nextbyte: /// 次のデータを取得する;
           continue;
         }
 
-        for (uint32_t px = 0; px < gd.box_w; ++px)
+        if (fillbg && left < right)
         {
-          uint32_t pix_index = py * gd.box_w + px;
-          uint32_t bit_index = pix_index * bpp;
-          uint32_t alpha = 0;
-          for (uint32_t bi = 0; bi < bpp; ++bi)
+          gfx->setRawColor(col_back);
+          if (left < draw_x)
           {
-            uint32_t pos = bit_index + bi;
-            uint32_t bit = (bitmap[pos >> 3] >> (7 - (pos & 7))) & 1U;
-            alpha = (alpha << 1) | bit;
+            gfx->writeFillRect(left, y + y0, draw_x - left, y1 - y0);
           }
+          int32_t draw_right = draw_x + glyph_w_scaled;
+          if (draw_right < right)
+          {
+            gfx->writeFillRect(draw_right, y + y0, right - draw_right, y1 - y0);
+          }
+        }
+
+        for (uint32_t px = 0; px < box_w; ++px)
+        {
+          uint32_t alpha = bitmap[py * glyph_stride + px];
 
           if (!fillbg && alpha == 0)
           {
@@ -899,6 +896,187 @@ label_nextbyte: /// 次のデータを取得する;
 
     gfx->endWrite();
     return xAdvance;
+  }
+
+  size_t LVGLfont::drawChar(LGFXBase* gfx, int32_t x, int32_t y, uint16_t uniCode, const TextStyle* style, FontMetrics* metrics, int32_t& filled_x) const
+  {
+    if (_font == nullptr || _font->get_glyph_dsc == nullptr || _font->get_glyph_bitmap == nullptr)
+    {
+      return drawCharDummy(gfx, x, y, metrics->x_advance, metrics->height, style, filled_x);
+    }
+
+    int32_t sy = 65536 * style->size_y;
+    int32_t sx = 65536 * style->size_x;
+    y += (metrics->y_offset * sy) >> 16;
+
+    lv_font_glyph_dsc_t gd;
+    if (!_font->get_glyph_dsc(_font, &gd, uniCode, 0))
+    {
+      return drawCharDummy(gfx, x, y, metrics->x_advance, metrics->height, style, filled_x);
+    }
+
+    int32_t adv_px = gd.adv_w;
+    int32_t xAdvance = (adv_px * sx) >> 16;
+    int32_t xoffset = (gd.ofs_x * sx) >> 16;
+
+    /*
+     * Space-like glyphs can have valid metrics but no bitmap payload.
+     * Do not fallback to drawCharDummy, keep LVGL-like spacing behavior.
+     */
+    if (gd.box_w == 0 || gd.box_h == 0)
+    {
+      bool fillbg = (style->back_rgb888 != style->fore_rgb888);
+      if (fillbg)
+      {
+        int32_t left  = std::max<int>(filled_x, x);
+        int32_t right = x + xAdvance;
+        if (left < right)
+        {
+          uint32_t col_back = gfx->getColorConverter()->convert(style->back_rgb888);
+          gfx->startWrite();
+          gfx->setRawColor(col_back);
+          gfx->writeFillRect(left, y, right - left, (metrics->height * sy) >> 16);
+          gfx->endWrite();
+        }
+        filled_x = right;
+      }
+      return xAdvance;
+    }
+
+    gd.req_raw_bitmap = 0;
+    gd.resolved_font = _font;
+    uint32_t glyph_stride = gd.box_w;
+    uint32_t glyph_stride_alloc = ((gd.box_w + 63U) / 64U) * 64U;
+    if (glyph_stride_alloc < gd.box_w) glyph_stride_alloc = gd.box_w;
+    const uint8_t stride_sentinel = 0xA5;
+    std::vector<uint8_t> glyph_buf(glyph_stride_alloc * gd.box_h, stride_sentinel);
+    lv_draw_buf_t draw_buf{};
+    draw_buf.data = glyph_buf.data();
+    const void* bmp_res = _font->get_glyph_bitmap(&gd, &draw_buf);
+    const uint8_t* bitmap = draw_buf.data;
+    if (bmp_res == nullptr || bitmap == nullptr)
+    {
+      return drawCharDummy(gfx, x, y, metrics->x_advance, metrics->height, style, filled_x);
+    }
+
+    uint8_t glyph_bpp = 8;
+    switch (gd.format)
+    {
+#ifdef LV_FONT_GLYPH_FORMAT_A1
+      case LV_FONT_GLYPH_FORMAT_A1:
+#endif
+#ifdef LV_FONT_GLYPH_FORMAT_A1_ALIGNED
+      case LV_FONT_GLYPH_FORMAT_A1_ALIGNED:
+#endif
+        glyph_bpp = 1;
+        break;
+#ifdef LV_FONT_GLYPH_FORMAT_A2
+      case LV_FONT_GLYPH_FORMAT_A2:
+#endif
+#ifdef LV_FONT_GLYPH_FORMAT_A2_ALIGNED
+      case LV_FONT_GLYPH_FORMAT_A2_ALIGNED:
+#endif
+        glyph_bpp = 2;
+        break;
+#ifdef LV_FONT_GLYPH_FORMAT_A4
+      case LV_FONT_GLYPH_FORMAT_A4:
+#endif
+#ifdef LV_FONT_GLYPH_FORMAT_A4_ALIGNED
+      case LV_FONT_GLYPH_FORMAT_A4_ALIGNED:
+#endif
+        glyph_bpp = 4;
+        break;
+      default:
+        glyph_bpp = 8;
+        break;
+    }
+
+    if (gd.box_w > 0 && gd.box_h > 0)
+    {
+      auto is_quantized_alpha = [glyph_bpp](uint8_t a) -> bool {
+        if (glyph_bpp >= 8) return true;
+        if (glyph_bpp == 1) return (a == 0 || a == 255);
+        if (glyph_bpp == 2) return (a == 0 || a == 85 || a == 170 || a == 255);
+        return ((a % 17) == 0);
+      };
+
+      auto score_stride = [&](uint32_t test_stride) -> uint32_t {
+        if (test_stride < gd.box_w || test_stride > glyph_stride_alloc) return 0;
+
+        uint32_t q_score = 0;
+        uint32_t payload_written = 0;
+        uint32_t pad_untouched = 0;
+        uint32_t payload_total = gd.box_w * gd.box_h;
+        uint32_t pad_total = (test_stride - gd.box_w) * gd.box_h;
+
+        for (uint32_t py = 0; py < gd.box_h; ++py)
+        {
+          const uint8_t* row = bitmap + py * test_stride;
+          for (uint32_t px = 0; px < gd.box_w; ++px)
+          {
+            uint8_t v = row[px];
+            if (is_quantized_alpha(v)) ++q_score;
+            if (v != stride_sentinel) ++payload_written;
+          }
+          for (uint32_t px = gd.box_w; px < test_stride; ++px)
+          {
+            if (row[px] == stride_sentinel) ++pad_untouched;
+          }
+        }
+
+        /*
+         * Score terms (ratio-based to avoid bias to larger stride):
+         * 1) payload_written ratio: should be high for the true stride
+         * 2) padding_untouched ratio: should be high only when row step is correct
+         * 3) quantized alpha count: tie breaker for low-bpp fonts
+         */
+        uint32_t payload_score = payload_total ? (payload_written * 1024U / payload_total) : 0;
+        uint32_t pad_score = pad_total ? (pad_untouched * 1024U / pad_total) : 1024U;
+        return (payload_score << 12) + (pad_score << 2) + q_score;
+      };
+
+      const uint32_t candidates[] = {
+        gd.box_w,
+        (uint32_t)((gd.box_w + 1U) & ~1U),
+        (uint32_t)((gd.box_w + 3U) & ~3U),
+        (uint32_t)((gd.box_w + 7U) & ~7U),
+        (uint32_t)((gd.box_w + 15U) & ~15U),
+        (uint32_t)((gd.box_w + 31U) & ~31U),
+        (uint32_t)((gd.box_w + 63U) & ~63U)
+      };
+
+      uint32_t best_stride = gd.box_w;
+      uint32_t best_score = score_stride(best_stride);
+      for (size_t ci = 0; ci < sizeof(candidates) / sizeof(candidates[0]); ++ci)
+      {
+        uint32_t s = candidates[ci];
+        if (s == best_stride) continue;
+        uint32_t sc = score_stride(s);
+        if (sc > best_score)
+        {
+          best_score = sc;
+          best_stride = s;
+        }
+      }
+      glyph_stride = best_stride;
+    }
+
+    int32_t yoffset = metrics->baseline - (gd.ofs_y + gd.box_h);
+    return draw_alpha_bitmap_common(
+        gfx,
+        x,
+        y,
+        style,
+        metrics,
+        filled_x,
+        xAdvance,
+        xoffset,
+        yoffset,
+        gd.box_w,
+        gd.box_h,
+        bitmap,
+        glyph_stride,
+        255U);
   }
 
 //----------------------------------------------------------------------------
@@ -1679,8 +1857,39 @@ label_nextbyte: /// 次のデータを取得する;
 
     heap_free(glyph_buf);
 
-    // Do not downsample subpixel bitmaps here.
-    // Keep raw bitmap data and dimensions consistent with font tables.
+    // If source glyph is subpixel-rendered (RGB triplets), collapse to grayscale
+    // so non-subpixel panels can get a closer visual result to LVGL AA rendering.
+    if (subpixel_rendering && raw_w >= 3)
+    {
+      uint32_t out_w = raw_w / 3;
+      if (out_w == 0) out_w = 1;
+
+      auto gray = (uint8_t*)heap_alloc_psram(out_w * raw_h);
+      if (gray == nullptr) gray = (uint8_t*)heap_alloc(out_w * raw_h);
+      if (gray != nullptr)
+      {
+        for (uint32_t y = 0; y < raw_h; ++y)
+        {
+          const uint8_t* src = &bitmap[y * raw_w];
+          uint8_t* dst = &gray[y * out_w];
+          for (uint32_t x = 0; x < out_w; ++x)
+          {
+            uint32_t s = x * 3;
+            uint32_t r = src[s + 0];
+            uint32_t g = src[s + 1];
+            uint32_t b = src[s + 2];
+            // Use integer luma approximation: 0.299R + 0.587G + 0.114B
+            dst[x] = (uint8_t)((r * 77U + g * 150U + b * 29U + 128U) >> 8);
+          }
+        }
+
+        heap_free(bitmap);
+        bitmap = gray;
+        info->bitmap_w = (uint16_t)out_w;
+        info->bbox_w = (uint16_t)out_w;
+      }
+    }
+
     *out_bitmap = bitmap;
     return true;
   }
@@ -1739,113 +1948,24 @@ label_nextbyte: /// 次のデータを取得する;
     // Renderer needs top-left draw origin, so convert with: top = baseline - (bbox_y + bbox_h).
     int32_t yoffset = metrics->baseline - (info.bbox_y + info.bbox_h);
 
-    int32_t glyph_w_scaled = (info.bbox_w * sx) >> 16;
-    uint32_t col_back = gfx->getColorConverter()->convert(style->back_rgb888);
-    uint32_t col_fore = gfx->getColorConverter()->convert(style->fore_rgb888);
-    bool fillbg = (style->back_rgb888 != style->fore_rgb888);
-
-    int32_t left = 0;
-    int32_t right = 0;
-    if (fillbg)
-    {
-      left  = std::max<int>(filled_x, x + (xoffset < 0 ? xoffset : 0));
-      right = x + std::max<int>(glyph_w_scaled + xoffset, xAdvance);
-      filled_x = right;
-    }
-
-    int32_t draw_x = x + xoffset;
-
     uint32_t max_alpha = (1U << bits_per_pixel) - 1;
-    uint32_t back_rgb = fillbg ? style->back_rgb888 : gfx->getBaseColor();
-    int32_t fore_r = (style->fore_rgb888 >> 16) & 0xFF;
-    int32_t fore_g = (style->fore_rgb888 >>  8) & 0xFF;
-    int32_t fore_b = (style->fore_rgb888      ) & 0xFF;
-    int32_t back_r = (back_rgb >> 16) & 0xFF;
-    int32_t back_g = (back_rgb >>  8) & 0xFF;
-    int32_t back_b = (back_rgb      ) & 0xFF;
-
-    gfx->startWrite();
-
-    if (fillbg && left < right)
-    {
-      gfx->setRawColor(col_back);
-      if (yoffset > 0)
-      {
-        gfx->writeFillRect(left, y, right - left, (yoffset * sy) >> 16);
-      }
-      int32_t y0 = ((yoffset + info.bbox_h) * sy) >> 16;
-      int32_t y1 = (metrics->height * sy) >> 16;
-      if (y0 < y1)
-      {
-        gfx->writeFillRect(left, y + y0, right - left, y1 - y0);
-      }
-    }
-
-    if (bitmap != nullptr && info.bbox_w && info.bbox_h)
-    {
-      int32_t yy0 = (yoffset * sy) >> 16;
-      for (uint32_t row = 0; row < info.bbox_h; ++row)
-      {
-        int32_t yy1 = ((yoffset + row + 1) * sy) >> 16;
-        int32_t fh = yy1 - yy0;
-        if (fh <= 0) { yy0 = yy1; continue; }
-
-        if (fillbg && left < right)
-        {
-          int32_t glyph_left = draw_x;
-          int32_t glyph_right = draw_x + glyph_w_scaled;
-          if (left < glyph_left)
-          {
-            gfx->setRawColor(col_back);
-            gfx->writeFillRect(left, y + yy0, glyph_left - left, fh);
-          }
-          if (glyph_right < right)
-          {
-            gfx->setRawColor(col_back);
-            gfx->writeFillRect(glyph_right, y + yy0, right - glyph_right, fh);
-          }
-        }
-
-        const uint8_t* row_ptr = &bitmap[row * info.bbox_w];
-        uint32_t col = 0;
-        while (col < info.bbox_w)
-        {
-          uint8_t a = row_ptr[col];
-          uint32_t start = col;
-          do { ++col; } while (col < info.bbox_w && row_ptr[col] == a);
-
-          if (a == 0 && !fillbg) continue;
-
-          int32_t x0 = (start * sx) >> 16;
-          int32_t x1 = (col   * sx) >> 16;
-          if (x1 <= x0) x1 = x0 + 1;
-
-          if (a == 0)
-          {
-            gfx->setRawColor(col_back);
-          }
-          else if (a >= max_alpha)
-          {
-            gfx->setRawColor(col_fore);
-          }
-          else
-          {
-            int32_t p = (a * 255 + (int32_t)(max_alpha >> 1)) / (int32_t)max_alpha;
-            gfx->setColor(color888( ( fore_r * p + back_r * (255 - p)) / 255
-                                  , ( fore_g * p + back_g * (255 - p)) / 255
-                                  , ( fore_b * p + back_b * (255 - p)) / 255 ));
-          }
-          gfx->writeFillRect(draw_x + x0, y + yy0, x1 - x0, fh);
-        }
-
-        yy0 = yy1;
-      }
-    }
-
-    gfx->endWrite();
-
+    size_t drawn = draw_alpha_bitmap_common(
+        gfx,
+        x,
+        y,
+        style,
+        metrics,
+        filled_x,
+        xAdvance,
+        xoffset,
+        yoffset,
+        info.bbox_w,
+        info.bbox_h,
+        bitmap,
+        info.bbox_w,
+        max_alpha);
     if (bitmap) heap_free(bitmap);
-    return xAdvance;
+    return drawn;
   }
 
 //----------------------------------------------------------------------------
