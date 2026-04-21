@@ -10,7 +10,7 @@ Licence:
 Author:
  [lovyan03](https://twitter.com/lovyan03)
 /----------------------------------------------------------------------------*/
-#include "Panel_EPD_ED2208.hpp"
+#include "Panel_ED2208.hpp"
 #include "lgfx/v1/Bus.hpp"
 #include "lgfx/v1/platforms/common.hpp"
 #include "lgfx/v1/misc/pixelcopy.hpp"
@@ -193,6 +193,56 @@ namespace lgfx
     }
   }
 
+  static void _dither_row_rgb_pair(const lgfx::bgr888_t* src, uint8_t* dst, uint_fast16_t w, uint_fast16_t y, uint8_t dither)
+  {
+    auto palette = epd_palette;
+
+    const int32_t x_step = 127 * 29;
+    const int32_t y_step = 129 * 48;
+
+    static constexpr size_t step_value = 129*127;
+    static constexpr size_t step_diff = step_value / 3;
+
+    int32_t bias_base = y * y_step % step_value;
+    // Original scale was /4.0f; keep that at dither_level=255 and scale down linearly.
+    int32_t r0, g0, b0;
+    for (uint_fast16_t x = 0; x <= w; x ++) {
+      int32_t r = 128;
+      int32_t g = 128;
+      int32_t b = 128;
+      if (x < w) {
+        r = src[x].r;
+        g = src[x].g;
+        b = src[x].b;
+      }
+      bias_base -= x_step;
+      if (bias_base < 0) bias_base += step_value;
+      int32_t bias_r = bias_base;
+      int32_t bias_g = bias_base - step_diff;
+      if (bias_g < 0) bias_g += step_value;
+      int32_t bias_b = bias_g - step_diff;
+      if (bias_b < 0) bias_b += step_value;
+      bias_b = bias_b * 2 - (step_value - 1);
+      bias_g = bias_g * 2 - (step_value - 1);
+      bias_r = bias_r * 2 - (step_value - 1);
+      int32_t bias = (bias_r + bias_g + bias_b);
+      bias = bias * dither >> 16;
+      bias_r = bias_r * dither >> 16;
+      bias_g = bias_g * dither >> 16;
+      bias_b = bias_b * dither >> 16;
+      r += bias + bias_r;
+      g += bias + bias_g;
+      b += bias + bias_b;
+      if (x & 1) {
+        dst[x >> 1] = _rgb_to_epd_color_pair(r0, g0, b0, r, g, b, palette);
+      } else {
+        r0 = r;
+        g0 = g;
+        b0 = b;
+      }
+    }
+  }
+
   // --- Dither: Bayer Lab 2pixel pair (L*-only bias, perceptually uniform) ---
 
   static void _dither_row_bayer_rgb_pair(const lgfx::bgr888_t* src, uint8_t* dst, uint_fast16_t w, uint_fast16_t y, uint8_t dither)
@@ -204,12 +254,12 @@ namespace lgfx
       int32_t r0 = src[x].r;
       int32_t g0 = src[x].g;
       int32_t b0 = src[x].b;
-      int32_t bias_r = row[x & 15];
-      int32_t bias_g = (bias_r + 85) & 255;
-      int32_t bias_b = (bias_r - 85) & 255;
-      bias_r = bias_r * 2 - 255;
-      bias_g = bias_g * 2 - 255;
+      int32_t bias_b = row[x & 15];
+      int32_t bias_g = (bias_b + 85) & 255;
+      int32_t bias_r = (bias_b - 85) & 255;
       bias_b = bias_b * 2 - 255;
+      bias_g = bias_g * 2 - 255;
+      bias_r = bias_r * 2 - 255;
       int32_t bias = (bias_r + bias_g + bias_b);
       bias = bias * dither >> 10;
       bias_r = bias_r * dither >> 10;
@@ -227,12 +277,12 @@ namespace lgfx
       } else {
         r1 = g1 = b1 = 128;
       }
-      bias_r = row[(x + 1) & 15];
-      bias_g = (bias_r + 85) & 255;
-      bias_b = (bias_r - 85) & 255;
-      bias_r = bias_r * 2 - 255;
-      bias_g = bias_g * 2 - 255;
+      bias_b = row[(x + 1) & 15];
+      bias_g = (bias_b + 85) & 255;
+      bias_r = (bias_b - 85) & 255;
       bias_b = bias_b * 2 - 255;
+      bias_g = bias_g * 2 - 255;
+      bias_r = bias_r * 2 - 255;
       bias = (bias_r + bias_g + bias_b);
       bias = bias * dither >> 10;
       bias_r = bias_r * dither >> 10;
@@ -249,13 +299,13 @@ namespace lgfx
 
   // --- Panel implementation ---
 
-  Panel_EPD_ED2208::Panel_EPD_ED2208(void)
+  Panel_ED2208::Panel_ED2208(void)
   {
     _cfg.dummy_read_bits = 0;
     _epd_mode = epd_mode_t::epd_quality;
   }
 
-  Panel_EPD_ED2208::~Panel_EPD_ED2208(void)
+  Panel_ED2208::~Panel_ED2208(void)
   {
     if (_lines_buffer) {
       heap_free(_lines_buffer);
@@ -267,7 +317,7 @@ namespace lgfx
     }
   }
 
-  color_depth_t Panel_EPD_ED2208::setColorDepth(color_depth_t depth)
+  color_depth_t Panel_ED2208::setColorDepth(color_depth_t depth)
   {
     (void)depth;
     _write_depth = color_depth_t::rgb888_3Byte;
@@ -275,17 +325,17 @@ namespace lgfx
     return color_depth_t::rgb888_3Byte;
   }
 
-  void Panel_EPD_ED2208::_send_command(uint8_t cmd)
+  void Panel_ED2208::_send_command(uint8_t cmd)
   {
     _bus->writeCommand(cmd, 8);
   }
 
-  void Panel_EPD_ED2208::_send_data(uint8_t data)
+  void Panel_ED2208::_send_data(uint8_t data)
   {
     _bus->writeData(data, 8);
   }
 
-  bool Panel_EPD_ED2208::_wait_busy(uint32_t timeout)
+  bool Panel_ED2208::_wait_busy(uint32_t timeout)
   {
     _bus->wait();
     if (_cfg.pin_busy >= 0 && !gpio_in(_cfg.pin_busy))
@@ -303,7 +353,7 @@ namespace lgfx
     return true;
   }
 
-  void Panel_EPD_ED2208::_init_sequence(void)
+  void Panel_ED2208::_init_sequence(void)
   {
     _bus->beginTransaction();
     cs_control(false);
@@ -326,7 +376,7 @@ namespace lgfx
     _bus->endTransaction();
   }
 
-  void Panel_EPD_ED2208::_turn_on_display(void)
+  void Panel_ED2208::_turn_on_display(void)
   {
     _bus->beginTransaction();
     cs_control(false);
@@ -356,7 +406,7 @@ namespace lgfx
     _bus->endTransaction();
   }
 
-  bool Panel_EPD_ED2208::init(bool use_reset)
+  bool Panel_ED2208::init(bool use_reset)
   {
     pinMode(_cfg.pin_busy, pin_mode_t::input_pullup);
 
@@ -392,22 +442,22 @@ namespace lgfx
     return true;
   }
 
-  void Panel_EPD_ED2208::_after_wake(void)
+  void Panel_ED2208::_after_wake(void)
   {
     _init_sequence();
   }
 
-  void Panel_EPD_ED2208::waitDisplay(void)
+  void Panel_ED2208::waitDisplay(void)
   {
     _wait_busy();
   }
 
-  bool Panel_EPD_ED2208::displayBusy(void)
+  bool Panel_ED2208::displayBusy(void)
   {
     return _cfg.pin_busy >= 0 && !gpio_in(_cfg.pin_busy);
   }
 
-  void Panel_EPD_ED2208::display(uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h)
+  void Panel_ED2208::display(uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h)
   {
     if (0 < w && 0 < h)
     {
@@ -435,7 +485,7 @@ namespace lgfx
 
   // --- Transfer ---
 
-  void Panel_EPD_ED2208::_exec_transfer(void)
+  void Panel_ED2208::_exec_transfer(void)
   {
     uint_fast16_t w = _cfg.panel_width;
     uint_fast16_t h = _cfg.panel_height;
@@ -447,8 +497,8 @@ namespace lgfx
     switch (_epd_mode) {
       case epd_mode_t::epd_fastest: dither_fn = _dither_row_bayer_simple;      dither = 248; break;
       case epd_mode_t::epd_fast:    dither_fn = _dither_row_bayer_simple_pair; dither = 160; break;
-      case epd_mode_t::epd_text:    dither_fn = _dither_row_bayer_rgb_pair;    dither = 128; break;
-      case epd_mode_t::epd_quality: dither_fn = _dither_row_bayer_rgb_pair;    dither = 248; break;
+      case epd_mode_t::epd_text:    dither_fn = _dither_row_rgb_pair;    dither = 128; break;
+      case epd_mode_t::epd_quality: dither_fn = _dither_row_rgb_pair;    dither = 248; break;
       default: break;
     }
 
@@ -469,7 +519,7 @@ namespace lgfx
     _bus->endTransaction();
   }
 
-  void Panel_EPD_ED2208::setSleep(bool flg)
+  void Panel_ED2208::setSleep(bool flg)
   {
     if (flg)
     {
@@ -484,7 +534,7 @@ namespace lgfx
     }
   }
 
-  void Panel_EPD_ED2208::setPowerSave(bool flg)
+  void Panel_ED2208::setPowerSave(bool flg)
   {
     if (flg) {
       setSleep(true);

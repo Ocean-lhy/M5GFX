@@ -20,10 +20,10 @@ namespace lgfx
  {
 //----------------------------------------------------------------------------
 
-  struct Panel_EPD_ED2208 : public Panel_FrameBufferBase
+  struct Panel_ED2208 : public Panel_FrameBufferBase
   {
-    Panel_EPD_ED2208(void);
-    ~Panel_EPD_ED2208(void);
+    Panel_ED2208(void);
+    ~Panel_ED2208(void);
 
     bool init(bool use_reset) override;
 

@@ -36,7 +36,7 @@ static constexpr int_fast16_t in_i2c_port = I2C_NUM_1;
 
 #elif defined ( CONFIG_IDF_TARGET_ESP32S3 )
 
-#include "lgfx/v1/panel/Panel_EPD_ED2208.hpp"
+#include "lgfx/v1/panel/Panel_ED2208.hpp"
 
 // for M5PaperS3
 #if defined (CONFIG_ESP32S3_SPIRAM_SUPPORT) && defined (CONFIG_SPIRAM_MODE_OCT)
@@ -1546,7 +1546,7 @@ namespace m5gfx
             bus_spi->init();
             _set_sd_spimode(bus_cfg.spi_host, GPIO_NUM_47); // SD
 
-            auto p = new Panel_EPD_ED2208();
+            auto p = new Panel_ED2208();
             p->bus(bus_spi);
             {
               auto cfg = p->config();
