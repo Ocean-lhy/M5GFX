@@ -243,58 +243,6 @@ namespace lgfx
     }
   }
 
-  // --- Dither: Bayer Lab 2pixel pair (L*-only bias, perceptually uniform) ---
-
-  static void _dither_row_bayer_rgb_pair(const lgfx::bgr888_t* src, uint8_t* dst, uint_fast16_t w, uint_fast16_t y, uint8_t dither)
-  {
-    auto palette = epd_palette;
-    auto row = &bayer256[( y    & 15) << 4];
-    // Original scale was /4.0f; keep that at dither_level=255 and scale down linearly.
-    for (uint_fast16_t x = 0; x < w; x += 2) {
-      int32_t r0 = src[x].r;
-      int32_t g0 = src[x].g;
-      int32_t b0 = src[x].b;
-      int32_t bias_b = row[x & 15];
-      int32_t bias_g = (bias_b + 85) & 255;
-      int32_t bias_r = (bias_b - 85) & 255;
-      bias_b = bias_b * 2 - 255;
-      bias_g = bias_g * 2 - 255;
-      bias_r = bias_r * 2 - 255;
-      int32_t bias = (bias_r + bias_g + bias_b);
-      bias = bias * dither >> 10;
-      bias_r = bias_r * dither >> 10;
-      bias_g = bias_g * dither >> 10;
-      bias_b = bias_b * dither >> 10;
-      r0 += bias + bias_r;
-      g0 += bias + bias_g;
-      b0 += bias + bias_b;
-
-      int32_t r1, g1, b1;
-      if (x + 1 < w) {
-        r1 = src[x + 1].r;
-        g1 = src[x + 1].g;
-        b1 = src[x + 1].b;
-      } else {
-        r1 = g1 = b1 = 128;
-      }
-      bias_b = row[(x + 1) & 15];
-      bias_g = (bias_b + 85) & 255;
-      bias_r = (bias_b - 85) & 255;
-      bias_b = bias_b * 2 - 255;
-      bias_g = bias_g * 2 - 255;
-      bias_r = bias_r * 2 - 255;
-      bias = (bias_r + bias_g + bias_b);
-      bias = bias * dither >> 10;
-      bias_r = bias_r * dither >> 10;
-      bias_g = bias_g * dither >> 10;
-      bias_b = bias_b * dither >> 10;
-      r1 += bias + bias_r;
-      g1 += bias + bias_g;
-      b1 += bias + bias_b;
-      dst[x >> 1] = _rgb_to_epd_color_pair(r0, g0, b0, r1, g1, b1, palette);
-    }
-  }
-
 //---------------------------------------------------------------
 
   // --- Panel implementation ---
