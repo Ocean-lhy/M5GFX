@@ -618,7 +618,12 @@ namespace lgfx
 
         //----------------------------------------------------------------------------
 
-
+        Panel_AMOLED_Framebuffer::Panel_AMOLED_Framebuffer(Panel_AMOLED* panel)
+         : _panel(panel)
+        {
+            assert(_panel);
+            setTouch(_panel->getTouch());
+        }
 
         bool Panel_AMOLED_Framebuffer::init(bool use_reset)
         {
@@ -632,6 +637,20 @@ namespace lgfx
             return Panel_FrameBufferBase::init(false);
         }
 
+        void Panel_AMOLED_Framebuffer::setInvert(bool invert)
+        {
+            _panel->setInvert(invert);
+        }
+
+        void Panel_AMOLED_Framebuffer::setBrightness(uint8_t brightness)
+        {
+            _panel->setBrightness(brightness);
+        }
+
+        uint_fast8_t Panel_AMOLED_Framebuffer::getTouchRaw(touch_point_t* tp, uint_fast8_t count)
+        {
+            return _panel->getTouchRaw(tp, count);
+        }
 
         void Panel_AMOLED_Framebuffer::display(uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h)
         {

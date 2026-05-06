@@ -1624,11 +1624,32 @@ namespace m5gfx
               cfg.invert = false;
               cfg.bus_shared = false;
               p->config(cfg);
+              p->setRotation(0);
 
               // OLED TE pin
               lgfx::pinMode(GPIO_NUM_38, lgfx::pin_mode_t::input_pullup);
             }
             _panel_last.reset(p);
+
+            {
+              auto t = new lgfx::Touch_CST816S();
+              _touch_last.reset(t);
+              auto cfg = t->config();
+              cfg.pin_int  = GPIO_NUM_13;
+              cfg.pin_sda  = GPIO_NUM_47;
+              cfg.pin_scl  = GPIO_NUM_48;
+              cfg.i2c_port = I2C_NUM_1;
+
+              cfg.freq = 400000;
+              cfg.x_min = 0;
+              cfg.x_max = 233;
+              cfg.y_min = 0;
+              cfg.y_max = 233;
+              cfg.offset_rotation = 0;
+              cfg.bus_shared = false;
+              t->config(cfg);
+              _panel_last->touch(t);
+            }
 
             goto init_clear;
 #endif
