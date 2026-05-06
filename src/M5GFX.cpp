@@ -13,6 +13,7 @@
 #include <soc/efuse_reg.h>
 #include <soc/gpio_reg.h>
 
+#include "lgfx/v1/panel/Panel_AMOLED.hpp"
 #include "lgfx/v1/panel/Panel_ILI9342.hpp"
 #include "lgfx/v1/panel/Panel_SSD1306.hpp"
 #include "lgfx/v1/panel/Panel_ST7735.hpp"
@@ -55,6 +56,8 @@ static constexpr int_fast16_t in_i2c_port = I2C_NUM_1;
 
 namespace m5gfx
 {
+  static constexpr uint32_t i2c_speed = 100000;
+
   static constexpr char LIBRARY_NAME[] = "M5GFX";
 
   M5GFX* M5GFX::_instance = nullptr;
@@ -78,43 +81,53 @@ namespace m5gfx
 
   static uint32_t _detect_i2c_device(uint8_t pin_sda, uint8_t pin_scl, const uint8_t* addr_list) {
     gpio::pin_backup_t backup_pins[] = { pin_sda, pin_scl };
+
+    {
+      lgfx::pinMode(pin_scl, lgfx::pin_mode_t::output);
+      lgfx::pinMode(pin_sda, lgfx::pin_mode_t::output);
+      const uint8_t cmd_list[] = {
+      lgfx::gpio::command_write_low  , pin_scl,
+      lgfx::gpio::command_delay_usec , 3,
+      lgfx::gpio::command_write_low  , pin_sda,
+      lgfx::gpio::command_delay_usec , 3,
+      lgfx::gpio::command_write_high , pin_scl, // SCL high
+      lgfx::gpio::command_delay_usec , 5,
+      lgfx::gpio::command_write_high , pin_sda, // SDA high (I2C STOP)
+      lgfx::gpio::command_delay_usec , 5,
+      lgfx::gpio::command_end
+      };
+      // force I2C stop
+      for (size_t i = 0; i < 8; ++i) {
+        lgfx::gpio::command(cmd_list);
+      }
+    }
+
     const uint8_t cmd_list[] = {
-    lgfx::gpio::command_write_low  , pin_scl, // set low
-    lgfx::gpio::command_mode_output, pin_scl,
-    lgfx::gpio::command_write_low  , pin_sda,
-    lgfx::gpio::command_mode_output, pin_sda,
-    lgfx::gpio::command_delay_usec , 5,
-    lgfx::gpio::command_write_high , pin_scl, // SCL high
-    lgfx::gpio::command_delay_usec , 5,
-    lgfx::gpio::command_write_high , pin_sda, // SDA high (I2C STOP)
-    lgfx::gpio::command_delay_usec , 5,
-    lgfx::gpio::command_write_low  , pin_scl,
-    lgfx::gpio::command_delay_usec , 5,
-    lgfx::gpio::command_write_low  , pin_sda,
-    lgfx::gpio::command_delay_usec , 10,
-    lgfx::gpio::command_mode_input_pulldown, pin_scl, // pulldownチェック (外部プルアップがあるならここでHIGHになる)
-    lgfx::gpio::command_delay_usec , 10,
-    lgfx::gpio::command_mode_input_pulldown, pin_sda, // pulldownチェック (外部プルアップがあるならここでHIGHになる)
-    lgfx::gpio::command_delay_usec , 10,
-    lgfx::gpio::command_read       , pin_scl,
-    lgfx::gpio::command_read       , pin_sda,
-    lgfx::gpio::command_mode_input_pullup, pin_scl,
-    lgfx::gpio::command_mode_input_pullup, pin_sda,
-    lgfx::gpio::command_delay_usec , 10,
-    lgfx::gpio::command_read       , pin_scl,  // pullupチェック
-    lgfx::gpio::command_read       , pin_sda,  // pullupチェック
+    lgfx::gpio::command_write_low          , pin_scl,
+    lgfx::gpio::command_read               , pin_scl,  // low チェック
+    lgfx::gpio::command_write_low          , pin_sda,
+    lgfx::gpio::command_read               , pin_sda,  // low チェック
+    lgfx::gpio::command_mode_input_pulldown, pin_scl,
+    lgfx::gpio::command_delay_usec         , 10,
+    lgfx::gpio::command_read               , pin_scl, // pulldownチェック (外部プルアップがあるならここでHIGHになる)
+    lgfx::gpio::command_mode_input_pullup  , pin_scl,
+    lgfx::gpio::command_mode_input_pulldown, pin_sda,
+    lgfx::gpio::command_delay_usec         , 10,
+    lgfx::gpio::command_read               , pin_sda, // pulldownチェック (外部プルアップがあるならここでHIGHになる)
+    lgfx::gpio::command_mode_input_pullup  , pin_sda,
     lgfx::gpio::command_end
     };
 
-    // ここでSDA,SCL各2回,合計4回のI2Cプルアップチェックが行われる。
+    // ここでSDA,SCL各2回,合計4回のreadチェックが行われる。
     uint32_t result = lgfx::gpio::command(cmd_list);
-    // I2Cピンであれば0x0Fになっているはず
-    if (result == 0x0F) {
+    // I2Cピンであれば0x03になっているはず
+    if (result == 0x03) {
       // for (int addr7bit = 0x08; addr7bit < 0x78; ++addr7bit) {
       //   int addr = (addr7bit << 2) + 1;
       for (; addr_list[0] != 0; ++addr_list) {
         // 7bit addr + write flag + ack check;
         uint_fast8_t addr7bit = addr_list[0];
+        // ACKチェック用ビットも含め左2bitシフトし、9bit相当にする
         uint_fast16_t sda_bits = (addr7bit << 2u) + 1u;
         lgfx::delayMicroseconds(5);
         lgfx::gpio_lo(pin_sda);
@@ -149,6 +162,7 @@ namespace m5gfx
   }
 
   static constexpr std::uint8_t m5pm1_i2c_addr = 0x6E; // M5PM1 device i2c address
+  static constexpr std::uint8_t m5ioe1_i2c_addr = 0x6F; // M5IOE1 device i2c address
   static constexpr std::uint8_t pi4io1_i2c_addr = 0x43;
   static constexpr std::uint8_t pi4io2_i2c_addr = 0x44;
 #if !defined (CONFIG_IDF_TARGET) || defined (CONFIG_IDF_TARGET_ESP32)
@@ -1484,6 +1498,138 @@ namespace m5gfx
         for (auto pin: backup_pins) { pin.restore(); }
       }
 
+      if (board == 0 || board == board_t::board_M5StopWatch)
+      {
+        static constexpr int_fast16_t stopwatch_i2c_sda = GPIO_NUM_47;
+        static constexpr int_fast16_t stopwatch_i2c_scl = GPIO_NUM_48;
+        static constexpr uint8_t stopwatch_i2c_addr_list[] = {
+          0x76u, // Dummy
+          0x77u, // Dummy
+          0x32u, // RX8130
+          0x68u, // BMI270
+          0u
+        };
+        uint32_t i2c_result = _detect_i2c_device(stopwatch_i2c_sda, stopwatch_i2c_scl, stopwatch_i2c_addr_list);
+// vTaskDelay(2000 / portTICK_RATE_MS);
+// ESP_LOGE(LIBRARY_NAME, "i2c_result : %02x", (int)i2c_result);
+        if (i2c_result == 0b111100) {
+          gpio::pin_backup_t backup_pins[] = { GPIO_NUM_39, GPIO_NUM_47, GPIO_NUM_48 };
+          lgfx::i2c::init(i2c_port, stopwatch_i2c_sda, stopwatch_i2c_scl);
+
+          id = 0;
+          for (int retry = 20; retry >= 0; --retry) {
+            auto chk_pm1 = lgfx::i2c::readRegister8(i2c_port, m5pm1_i2c_addr, 0x00, i2c_speed); // Try to read M5PM1 device id
+            auto chk_ioe1 = lgfx::i2c::readRegister8(i2c_port, m5ioe1_i2c_addr, 0x00, i2c_speed); // Try to read M5IOE1 device id
+            if (chk_pm1.has_value() && chk_ioe1.has_value()) {
+              // PM1 = 0x50, IOE1 = 0x35 for M5StopWatch
+              // ESP_LOGE(LIBRARY_NAME, "pm1:%02x / ioe1:%02x", chk_pm1.value(), chk_ioe1.value());
+              if (0x50 == chk_pm1.value()
+              &&  0x35 == chk_ioe1.value()) {
+                id = 1;
+                break;
+              }
+            }
+            lgfx::delay(10);
+          }
+          if (id != 0) {
+            board = board_t::board_M5StopWatch;
+            ESP_LOGI(LIBRARY_NAME, "[Autodetect] board_M5StopWatch");
+
+#if !(defined(CONFIG_ESP32S3_SPIRAM_SUPPORT))
+              ESP_LOGE(LIBRARY_NAME, "M5PaperColor need OPI-PSRAM enabled");
+#elif !defined (CONFIG_SPIRAM_MODE_OCT)
+              ESP_LOGE(LIBRARY_NAME, "M5PaperColor need OPI-PSRAM enabled");
+#else
+            lgfx::i2c::bitOn( i2c_port, m5pm1_i2c_addr, 0x06, 0x17, i2c_speed);
+
+            // GPIO39:OLED CS Pin
+            lgfx::pinMode(GPIO_NUM_39, lgfx::pin_mode_t::output);
+            lgfx::gpio_hi(GPIO_NUM_39);
+
+            // IO1: MUX_CTR
+            // IO3: AUDIO_EN
+            // IO4: TP RST
+            // IO5: OLED RST
+            // IO8: L3B_EN
+            lgfx::i2c::bitOff(i2c_port, m5ioe1_i2c_addr, 0x13, 0b10011101, i2c_speed);  // Set pin gpio4,5,8 drv: push-pull
+            lgfx::i2c::bitOn( i2c_port, m5ioe1_i2c_addr, 0x03, 0b10011101, i2c_speed);  // Set pin gpio1,3,4,5,8 mode: output
+            lgfx::i2c::bitOn( i2c_port, m5ioe1_i2c_addr, 0x05, 0b10011001, i2c_speed);  // Set HIGH gpio1,4,5,8
+
+            // reset OLED + TP
+            lgfx::i2c::bitOff(i2c_port, m5ioe1_i2c_addr, 0x05, 0b00011000, i2c_speed);  // Set LOW gpio4,5
+            lgfx::delay(8);
+            lgfx::i2c::bitOn( i2c_port, m5ioe1_i2c_addr, 0x05, 0b00011000, i2c_speed);  // Set HIGH gpio4,5,8
+
+            // reg: 0x09(I2C_CFG) - Set to 0x00 to disable I2C idle sleep mode.
+            // PMIC is always-on powered, and with battery power, shutdown doesn't reset the chip.
+            // This register may have been modified elsewhere, causing PMIC communication issues.
+            // Explicitly set it here during initialization to ensure proper operation.
+            lgfx::i2c::writeRegister8(i2c_port, m5pm1_i2c_addr, 0x09, 0x00, 0, i2c_speed);
+
+            // Disable watchdog (WDT_CNT=0 disables)
+            lgfx::i2c::writeRegister8(i2c_port, m5pm1_i2c_addr, 0x0A, 0x00, 0, i2c_speed);
+
+            bus_cfg.pin_mosi = GPIO_NUM_NC;
+            bus_cfg.pin_miso = GPIO_NUM_NC;
+            bus_cfg.pin_io0 = GPIO_NUM_41;
+            bus_cfg.pin_io1 = GPIO_NUM_42;
+            bus_cfg.pin_io2 = GPIO_NUM_46;
+            bus_cfg.pin_io3 = GPIO_NUM_45;
+            bus_cfg.pin_sclk = GPIO_NUM_40;
+            bus_cfg.spi_mode = 0;
+            bus_cfg.spi_3wire = true;
+
+            bus_cfg.spi_host = SPI2_HOST;
+            bus_cfg.freq_write = 80000000;
+            bus_cfg.freq_read  = 1000000;
+            bus_spi->config(bus_cfg);
+            bus_spi->init();
+
+            auto p = new Panel_CO5300();
+            p->bus(bus_spi);
+            {
+              auto cfg = p->config();
+              cfg.pin_cs = GPIO_NUM_39;
+              cfg.pin_rst = GPIO_NUM_NC;
+              cfg.pin_busy = GPIO_NUM_NC;
+              cfg.panel_width = 466;
+              cfg.panel_height = 466;
+              cfg.offset_x = 6;
+              cfg.offset_y = 0;
+              cfg.offset_rotation = 0;
+              cfg.readable = false;
+              cfg.invert = false;
+              cfg.bus_shared = false;
+              p->config(cfg);
+
+              // OLED TE pin
+              lgfx::pinMode(GPIO_NUM_38, lgfx::pin_mode_t::input_pullup);
+            }
+/*
+            p->init(true);
+            if ( p->initPanelFb() ) {
+              auto fbPanel = p->getPanelFb();
+              if ( fbPanel ) {
+                fbPanel->setBus(bus_spi);
+                fbPanel->setAutoDisplay(true);
+                // setPanel(fbPanel);
+                _panel_last.reset(fbPanel);
+              }
+            }
+//*/
+            if (_panel_last.get() == nullptr) {
+              _panel_last.reset(p);
+            }
+
+            goto init_clear;
+#endif
+          }
+          lgfx::i2c::release(i2c_port);
+          bus_spi->release();
+          for (auto pin: backup_pins) { pin.restore(); }
+        }
+      }
+
       if (board == 0 || board == board_t::board_M5PaperColor)
       {
         static constexpr int_fast16_t papercolor_i2c_sda = GPIO_NUM_3;
@@ -1491,13 +1637,13 @@ namespace m5gfx
         static constexpr uint8_t papercolor_i2c_addr_list[] = {
           0x32u, // RX8130
           0x44u, // SHT40
-          0x6Eu, // PM1(PY32)
+          0x6Eu, // M5PM1
           0x77u, // dummy nothing
           0u
         };
         uint32_t i2c_result = _detect_i2c_device(papercolor_i2c_sda, papercolor_i2c_scl, papercolor_i2c_addr_list);
 
-        if (i2c_result == 0xF1) {
+        if (i2c_result == 0b110001) {
           gpio::pin_backup_t backup_pins[] = { GPIO_NUM_2, GPIO_NUM_3, GPIO_NUM_11, GPIO_NUM_12, GPIO_NUM_13, GPIO_NUM_14, GPIO_NUM_15, GPIO_NUM_43, GPIO_NUM_44, GPIO_NUM_47 };
           lgfx::i2c::init(i2c_port, papercolor_i2c_sda, papercolor_i2c_scl);
           int i2c_speed = 100000;
@@ -1507,20 +1653,19 @@ namespace m5gfx
             board = board_t::board_M5PaperColor;
             ESP_LOGI(LIBRARY_NAME, "[Autodetect] board_M5PaperColor");
 
+#if !(defined(CONFIG_ESP32S3_SPIRAM_SUPPORT))
+              ESP_LOGE(LIBRARY_NAME, "M5PaperColor need OPI-PSRAM enabled");
+#elif !defined (CONFIG_SPIRAM_MODE_OCT)
+              ESP_LOGE(LIBRARY_NAME, "M5PaperColor need OPI-PSRAM enabled");
+#else
             // Disable watchdog (WDT_CNT=0 disables)
             lgfx::i2c::writeRegister8(i2c_port, m5pm1_i2c_addr, 0x0A, 0x00, i2c_speed);
 
-            // GPIO0: EPD power enable
-            lgfx::i2c::bitOff(I2C_NUM_1, m5pm1_i2c_addr, 0x16, 1 << 0, i2c_speed); // Set pin gpio0 as gpio function
-            lgfx::i2c::bitOn(I2C_NUM_1, m5pm1_i2c_addr, 0x10, 1 << 0, i2c_speed);  // Set pin gpio0 mode: output
-            lgfx::i2c::bitOff(I2C_NUM_1, m5pm1_i2c_addr, 0x13, 1 << 0, i2c_speed); // Set gpio0 push-pull mode: reg:0x13
-            lgfx::i2c::bitOn(I2C_NUM_1, m5pm1_i2c_addr, 0x11, 1 << 0, i2c_speed);  // Set gpio0 output high: reg:0x05
-
-            // GPIO3: SD card power enable
-            lgfx::i2c::bitOff(I2C_NUM_1, m5pm1_i2c_addr, 0x16, 1 << 3, i2c_speed); // Set pin gpio3 as gpio function
-            lgfx::i2c::bitOn(I2C_NUM_1, m5pm1_i2c_addr, 0x10, 1 << 3, i2c_speed);  // Set pin gpio3 mode: output
-            lgfx::i2c::bitOff(I2C_NUM_1, m5pm1_i2c_addr, 0x13, 1 << 3, i2c_speed); // Set gpio3 push-pull mode: reg:0x13
-            lgfx::i2c::bitOn(I2C_NUM_1, m5pm1_i2c_addr, 0x11, 1 << 3, i2c_speed);  // Set gpio3 output high: reg:0x05
+            // GPIO0: EPD power enable / GPIO3: SD card power enable
+            lgfx::i2c::bitOff(i2c_port, m5pm1_i2c_addr, 0x16, 0b11<<(0*2) | 0b11<<(3*2), i2c_speed); // Set pin gpio0,3 as gpio function
+            lgfx::i2c::bitOn(i2c_port, m5pm1_i2c_addr, 0x10, 1 << 0 | 1 << 3, i2c_speed);  // Set pin gpio0,3 mode: output
+            lgfx::i2c::bitOff(i2c_port, m5pm1_i2c_addr, 0x13, 1 << 0 | 1 << 3, i2c_speed); // Set gpio0,3 push-pull mode: reg:0x13
+            lgfx::i2c::bitOn(i2c_port, m5pm1_i2c_addr, 0x11, 1 << 0 | 1 << 3, i2c_speed);  // Set gpio0,3 output high: reg:0x11
 
             // reg: 0x09(I2C_CFG) - Set to 0x00 to disable I2C idle sleep mode.
             // PMIC is always-on powered, and with battery power, shutdown doesn't reset the chip.
@@ -1565,6 +1710,7 @@ namespace m5gfx
             }
             _panel_last.reset(p);
             goto init_clear;
+#endif
           }
           lgfx::i2c::release(i2c_port);
           bus_spi->release();

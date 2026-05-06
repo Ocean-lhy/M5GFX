@@ -391,13 +391,6 @@ namespace lgfx
 
         void Panel_AMOLED::setWindow(uint_fast16_t xs, uint_fast16_t ys, uint_fast16_t xe, uint_fast16_t ye)
         {
-            // ESP_LOGD("Panel_AMOLED","setWindow %d %d %d %d", xs, ys, xe, ye);
-            uint16_t w = (xe-xs)+1;
-            if(xs%2!=0 || w%2!=0) { // Panel_AMOLED restriction: x and w must be divisible by 2
-                // ESP_LOGD("LGFX", "clip coords aren't aligned");
-                return;
-            }
-
             if (xs > xe || xe > _width-1) { return; }
             if (ys > ye || ye > _height-1) { return; }
 
@@ -406,6 +399,14 @@ namespace lgfx
             xe += _colstart;
             // Set limit
             if ((xe - xs) >= _width) { xs = 0; xe = _width - 1; }
+
+            // ESP_LOGD("Panel_AMOLED","setWindow %d %d %d %d", xs, ys, xe, ye);
+            uint16_t w = (xe-xs)+1;
+            if(xs%2!=0 || w%2!=0) { // Panel_AMOLED restriction: x and w must be divisible by 2
+                // ESP_LOGD("LGFX", "clip coords aren't aligned");
+                return;
+            }
+
 
             {
                 // Set Column Start Address (CASET)
