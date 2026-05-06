@@ -796,7 +796,30 @@ namespace m5gfx
 
     /// autodetectの際にreset済みなのでここではuse_resetをfalseで呼び出す。;
     /// M5Paperはreset後の復帰に800msec程度掛かるのでreset省略は起動時間短縮に有効;
-    return LGFX_Device::init_impl(false, use_clear);
+    if (false == LGFX_Device::init_impl(false, use_clear)) {
+      return false;
+    }
+
+#if defined (CONFIG_IDF_TARGET_ESP32S3)
+    switch (board) {
+    default:
+      break;
+
+    case board_t::board_M5StopWatch:
+      auto p = reinterpret_cast<lgfx::Panel_CO5300*>(_panel_last.get());
+      if (p->initPanelFb() ) {
+        auto fbPanel = p->getPanelFb();
+        if( fbPanel ) {
+          fbPanel->setBus(_bus_last.get());
+          fbPanel->setAutoDisplay(true);
+          setPanel(fbPanel);
+        }
+      }
+      break;
+    }
+#endif
+
+    return true;
   }
 
   board_t M5GFX::autodetect(bool use_reset, board_t board)
@@ -1592,8 +1615,8 @@ namespace m5gfx
               cfg.pin_cs = GPIO_NUM_39;
               cfg.pin_rst = GPIO_NUM_NC;
               cfg.pin_busy = GPIO_NUM_NC;
-              cfg.panel_width = 466;
-              cfg.panel_height = 466;
+              cfg.panel_width = 468;
+              cfg.panel_height = 468;
               cfg.offset_x = 6;
               cfg.offset_y = 0;
               cfg.offset_rotation = 0;
@@ -1605,21 +1628,7 @@ namespace m5gfx
               // OLED TE pin
               lgfx::pinMode(GPIO_NUM_38, lgfx::pin_mode_t::input_pullup);
             }
-/*
-            p->init(true);
-            if ( p->initPanelFb() ) {
-              auto fbPanel = p->getPanelFb();
-              if ( fbPanel ) {
-                fbPanel->setBus(bus_spi);
-                fbPanel->setAutoDisplay(true);
-                // setPanel(fbPanel);
-                _panel_last.reset(fbPanel);
-              }
-            }
-//*/
-            if (_panel_last.get() == nullptr) {
-              _panel_last.reset(p);
-            }
+            _panel_last.reset(p);
 
             goto init_clear;
 #endif
