@@ -45,10 +45,10 @@ namespace lgfx
   static constexpr palette_t epd_palette[] = {
     {   0,   0,   0, EPD_BLACK  },
     { 255, 255, 255, EPD_WHITE  },
-    { 255, 255,   0, EPD_YELLOW },
-    { 255,   0,   0, EPD_RED    },
-    {   0,   0, 255, EPD_BLUE   },
-    {   0, 255,   0, EPD_GREEN  },
+    { 255, 243,  56, EPD_YELLOW },
+    { 191,   0,   0, EPD_RED    },
+    { 100,  64, 255, EPD_BLUE   },
+    {  67, 138,  28, EPD_GREEN  },
   };
 
   static constexpr uint8_t bayer256[256] = {
