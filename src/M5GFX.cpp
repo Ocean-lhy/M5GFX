@@ -435,9 +435,9 @@ namespace m5gfx
 #elif defined (CONFIG_IDF_TARGET_ESP32S3)
 
   static constexpr int32_t i2c_freq = 400000;
-  static constexpr int_fast16_t aw9523_i2c_addr = 0x58;  // AW9523B
-  static constexpr int_fast16_t axp_i2c_addr = 0x34;     // AXP2101
-  static constexpr int_fast16_t gc0308_i2c_addr = 0x21;  // GC0308
+  static constexpr int_fast16_t aw9523_i2c_addr = 0x58; // AW9523B
+  static constexpr int_fast16_t axp_i2c_addr = 0x34;    // AXP2101
+  static constexpr int_fast16_t gc0308_i2c_addr = 0x21; // GC0308
   static constexpr int_fast16_t i2c_port = I2C_NUM_1;
   static constexpr int_fast16_t i2c_sda = GPIO_NUM_12;
   static constexpr int_fast16_t i2c_scl = GPIO_NUM_11;
@@ -1364,7 +1364,8 @@ namespace m5gfx
     switch (pkg_ver) {
     case 0: // EFUSE_PKG_VERSION_ESP32S3:     // QFN56
 
-      if (board == 0 || board == board_t::board_M5StackCoreS3 || board == board_t::board_M5StackCoreS3SE)
+      if (board == 0 || board == board_t::board_M5StackCoreS3 || board == board_t::board_M5StackCoreS3SE
+          || board == board_t::board_M5StackChan)
       {
         lgfx::i2c::init(i2c_port, i2c_sda, i2c_scl);
 
@@ -1420,12 +1421,20 @@ namespace m5gfx
               board = board_t::board_M5StackCoreS3;
               // Camera GC0308 check (not found == M5StackCoreS3SE)
               auto chk_gc  = lgfx::i2c::readRegister8(i2c_port, gc0308_i2c_addr, 0x00, i2c_freq);
-              if (chk_gc .has_value() && chk_gc .value() == 0x9b) {
-                ESP_LOGI(LIBRARY_NAME, "[Autodetect] board_M5StackCoreS3");
+              if (chk_gc.has_value() && chk_gc.value() == 0x9b) {
+                auto chk_m5ioe1 = lgfx::i2c::readRegister8(i2c_port, 0x6F, 0x02, 100000); // Read firmware version
+                if (chk_m5ioe1.has_value() && (((uint8_t)chk_m5ioe1.value()) >= 0x04)) {
+                  board = board_M5StackChan;
+                  ESP_LOGI(LIBRARY_NAME, "[Autodetect] board_M5StackChan");
+                } else {
+                  board = board_M5StackCoreS3;
+                  ESP_LOGI(LIBRARY_NAME, "[Autodetect] board_M5StackCoreS3");
+                }     
               } else {
                 board = board_M5StackCoreS3SE;
                 ESP_LOGI(LIBRARY_NAME, "[Autodetect] board_M5StackCoreS3SE");
               }
+          
               bus_cfg.freq_write = 40000000;
               bus_cfg.freq_read  = 16000000;
               bus_spi->config(bus_cfg);
@@ -2780,6 +2789,7 @@ init_clear:
     case board_M5StackCore2:   title = "M5StackCore2";   break;
     case board_M5StackCoreS3:  title = "M5StackCoreS3";  break;
     case board_M5StackCoreS3SE:title = "M5StackCoreS3SE";break;
+    case board_M5StackChan:    title = "M5StackChan";    break;
     case board_M5StickC:       title = "M5StickC";       break;
     case board_M5StickCPlus:   title = "M5StickCPlus";   break;
     case board_M5StickCPlus2:  title = "M5StickCPlus2";  break;
@@ -2857,6 +2867,7 @@ init_clear:
     case board_M5Stack:
     case board_M5StackCoreS3:
     case board_M5StackCoreS3SE:
+    case board_M5StackChan:
       pnl_cfg.offset_rotation = 3;
       r = 1;
       break;
