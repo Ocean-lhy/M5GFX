@@ -430,12 +430,12 @@ namespace lgfx
 
     // Select dither algorithm for the current _epd_mode.
     auto dither_fn = _dither_row_none;
-    uint8_t dither = 128;
+    uint8_t dither = 70;
     switch (_epd_mode) {
       case epd_mode_t::epd_fastest: dither_fn = _dither_row_none;       break;
-      case epd_mode_t::epd_fast:    dither_fn = _dither_row_bayer_simple_pair; dither = 160; break;
-      case epd_mode_t::epd_text:    dither_fn = _dither_row_rgb_pair;    dither = 128; break;
-      case epd_mode_t::epd_quality: dither_fn = _dither_row_rgb_pair;    dither = 248; break;
+      case epd_mode_t::epd_fast:    dither_fn = _dither_row_bayer_simple_pair; break;
+      case epd_mode_t::epd_text:    dither_fn = _dither_row_rgb_pair;    break;
+      case epd_mode_t::epd_quality: dither_fn = _dither_row_rgb_pair;    dither = 140; break;
       default: break;
     }
 
