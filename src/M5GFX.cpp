@@ -79,6 +79,7 @@ namespace m5gfx
     }
   }
 
+  __attribute__ ((unused))
   static uint32_t _detect_i2c_device(uint8_t pin_sda, uint8_t pin_scl, const uint8_t* addr_list) {
     gpio::pin_backup_t backup_pins[] = { pin_sda, pin_scl };
 
@@ -2739,6 +2740,7 @@ The usage of each pin is as follows.
       }
     }
 
+#elif defined (CONFIG_IDF_TARGET_ESP32H2)
 #endif
 
     board = board_t::board_unknown;
