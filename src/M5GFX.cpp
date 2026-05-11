@@ -456,8 +456,9 @@ namespace m5gfx
 
     void rst_control(bool level) override
     {
-      uint8_t bits = level ? (1<<5) : 0;
-      uint8_t mask = level ? ~0 : ~(1<<5);
+      static constexpr uint8_t lcd_rst_bit = 1 << 1; // AW9523B P1_1
+      uint8_t bits = level ? lcd_rst_bit : 0;
+      uint8_t mask = level ? ~0 : ~ lcd_rst_bit;
       // LCD_RST
       lgfx::i2c::writeRegister8(i2c_port, aw9523_i2c_addr, 0x03, bits, mask, i2c_freq);
     }
@@ -468,7 +469,7 @@ namespace m5gfx
       // CS操作時にGPIO35の役割を切り替える (MISO or D/C);
 
       // FSPIQ_IN_IDX==FSPI MISO / SIG_GPIO_OUT_IDX==GPIO OUT
-      // *(volatile uint32_t*)GPIO_FUNC35_OUT_SEL_CFG_REG = flg ? FSPIQ_OUT_IDX : SIG_GPIO_OUT_IDX;
+      *(volatile uint32_t*)GPIO_FUNC35_OUT_SEL_CFG_REG = flg ? FSPIQ_OUT_IDX : SIG_GPIO_OUT_IDX;
 
       // CS HIGHの場合はGPIO出力を無効化し、MISO入力として機能させる。
       // CS LOW の場合はGPIO出力を有効化し、D/Cとして機能させる。
