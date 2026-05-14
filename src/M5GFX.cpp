@@ -1541,7 +1541,7 @@ namespace m5gfx
         bus_spi->config(bus_cfg);
         bus_spi->init();
         id = _read_panel_id(bus_spi, GPIO_NUM_15);
-        bool is_st7735 = (id & 0xFF) == 0x7c;
+        bool is_st7735 = ((id & 0xFFFF) == 0x7683 || (id & 0xFFFF) == 0x897C);
         bool is_gc9107 = (id & 0xFFFFFF) == 0x079100;
 
         if (is_st7735 || is_gc9107)
@@ -1867,7 +1867,7 @@ The usage of each pin is as follows.
         bus_spi->config(bus_cfg);
         bus_spi->init();
         id = _read_panel_id(bus_spi, GPIO_NUM_14);
-        bool is_st7735 = (id & 0xFF) == 0x7c;
+        bool is_st7735 = ((id & 0xFFFF) == 0x7683 || (id & 0xFFFF) == 0x897C);
         bool is_gc9107 = (id & 0xFFFFFF) == 0x079100;
 //      ESP_LOGI(LIBRARY_NAME, "[Autodetect] panel_id: 0x%08x", id);
         if (is_st7735 || is_gc9107)
